@@ -1,0 +1,19 @@
+[package]
+name = "adr"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "adr"
+path = "src/main.rs"
+
+[dependencies]
+agent-diff-core.workspace = true
+agent-diff-git-patch.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+

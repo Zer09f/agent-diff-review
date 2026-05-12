@@ -1,0 +1,34 @@
+{
+  "name": "agent-diff-review",
+  "version": "0.1.0",
+  "description": "Review AI-generated worktree changes with a visual diff map and line-level accept/reject decisions.",
+  "author": {
+    "name": "agent-diff-review contributors",
+    "email": "maintainers@example.com",
+    "url": "https://github.com/agent-diff-review/agent-diff-review"
+  },
+  "homepage": "https://github.com/agent-diff-review/agent-diff-review",
+  "repository": "https://github.com/agent-diff-review/agent-diff-review",
+  "license": "MIT",
+  "keywords": ["ai", "diff", "review", "codex", "git"],
+  "skills": "./skills/",
+  "hooks": "./hooks.json",
+  "interface": {
+    "displayName": "agent-diff-review",
+    "shortDescription": "Visual review for AI-generated code changes.",
+    "longDescription": "Scan Git worktree changes, generate an interactive review report, and apply line-level accept/reject decisions through the adr binary.",
+    "developerName": "agent-diff-review contributors",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://github.com/agent-diff-review/agent-diff-review",
+    "privacyPolicyURL": "https://github.com/agent-diff-review/agent-diff-review",
+    "termsOfServiceURL": "https://github.com/agent-diff-review/agent-diff-review",
+    "defaultPrompt": [
+      "Review the current AI code changes.",
+      "Generate an agent-diff-review report.",
+      "Apply my accepted diff decisions."
+    ],
+    "brandColor": "#176B87"
+  }
+}
+

@@ -1,0 +1,52 @@
+{
+  "name": "agent-diff-review-vscode",
+  "displayName": "agent-diff-review",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Visual review and line-level accept/reject for AI-generated code changes.",
+  "license": "MIT",
+  "publisher": "agent-diff-review",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onCommand:agentDiffReview.open",
+    "onCommand:agentDiffReview.applyDecisions"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentDiffReview.open",
+        "title": "Agent Diff Review: Open Review"
+      },
+      {
+        "command": "agentDiffReview.applyDecisions",
+        "title": "Agent Diff Review: Apply Decisions"
+      }
+    ],
+    "configuration": {
+      "title": "agent-diff-review",
+      "properties": {
+        "agentDiffReview.adrPath": {
+          "type": "string",
+          "default": "adr",
+          "description": "Path to the adr binary."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/vscode": "^1.93.0",
+    "@vscode/vsce": "^3.2.1",
+    "typescript": "^5.6.3"
+  }
+}
+

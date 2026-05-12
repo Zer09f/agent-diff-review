@@ -1,0 +1,21 @@
+{
+  "name": "agent-diff-review-local",
+  "interface": {
+    "displayName": "agent-diff-review Local"
+  },
+  "plugins": [
+    {
+      "name": "agent-diff-review",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex/agent-diff-review"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
+

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-diff-review.dev/schemas/decision-set.schema.json",
+  "title": "DecisionSet",
+  "type": "object",
+  "required": ["schemaVersion", "sessionWorktreeHash", "decisions"],
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "sessionWorktreeHash": { "type": "string" },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["fileId", "hunkId", "rowId", "decision"],
+        "properties": {
+          "fileId": { "type": "string" },
+          "hunkId": { "type": "string" },
+          "rowId": { "type": "string" },
+          "decision": { "enum": ["accept", "reject", "pending"] }
+        }
+      }
+    }
+  }
+}
+

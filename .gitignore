@@ -1,0 +1,9 @@
+target/
+node_modules/
+dist/
+out/
+*.vsix
+.agent-diff-review/
+.DS_Store
+Thumbs.db
+~$*

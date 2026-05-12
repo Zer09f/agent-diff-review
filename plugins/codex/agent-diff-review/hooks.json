@@ -1,0 +1,10 @@
+{
+  "hooks": [
+    {
+      "name": "agent-diff-review-session-summary",
+      "description": "Generate a review report after an AI coding pass when invoked by the user.",
+      "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/review.ps1"
+    }
+  ]
+}
+

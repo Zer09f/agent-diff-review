@@ -1,0 +1,20 @@
+{
+  "name": "agent-diff-review",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Visual review and line-level accept/reject for AI-generated code changes.",
+  "license": "MIT",
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "workspaces": [
+    "packages/ui",
+    "packages/opencode-plugin",
+    "packages/vscode-extension"
+  ],
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
+

@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-diff-review.dev/schemas/review-session.schema.json",
+  "title": "ReviewSession",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "workspaceRoot",
+    "baseRef",
+    "headRef",
+    "createdAt",
+    "worktreeHash",
+    "files",
+    "dependencyEdges",
+    "riskMarkers",
+    "testImpacts"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "workspaceRoot": { "type": "string" },
+    "baseRef": { "type": "string" },
+    "headRef": { "type": "string" },
+    "createdAt": { "type": "string" },
+    "worktreeHash": { "type": "string" },
+    "files": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/changedFile" }
+    },
+    "dependencyEdges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dependencyEdge" }
+    },
+    "riskMarkers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/riskMarker" }
+    },
+    "testImpacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/testImpact" }
+    }
+  },
+  "$defs": {
+    "changedFile": {
+      "type": "object",
+      "required": [
+        "fileId",
+        "path",
+        "oldPath",
+        "changeType",
+        "binary",
+        "fileDecisionOnly",
+        "language",
+        "additions",
+        "deletions",
+        "beforeContent",
+        "afterContent",
+        "hunks"
+      ],
+      "properties": {
+        "fileId": { "type": "string" },
+        "path": { "type": "string" },
+        "oldPath": { "type": ["string", "null"] },
+        "changeType": {
+          "enum": ["added", "modified", "deleted", "renamed", "copied", "untracked"]
+        },
+        "binary": { "type": "boolean" },
+        "fileDecisionOnly": { "type": "boolean" },
+        "language": {
+          "enum": ["type-script", "java-script", "java", "other", null]
+        },
+        "additions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 },
+        "beforeContent": { "type": ["string", "null"] },
+        "afterContent": { "type": ["string", "null"] },
+        "hunks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diffHunk" }
+        }
+      }
+    },
+    "diffHunk": {
+      "type": "object",
+      "required": ["hunkId", "oldStart", "oldLines", "newStart", "newLines", "header", "rows"],
+      "properties": {
+        "hunkId": { "type": "string" },
+        "oldStart": { "type": "integer", "minimum": 0 },
+        "oldLines": { "type": "integer", "minimum": 0 },
+        "newStart": { "type": "integer", "minimum": 0 },
+        "newLines": { "type": "integer", "minimum": 0 },
+        "header": { "type": "string" },
+        "rows": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diffRow" }
+        }
+      }
+    },
+    "diffRow": {
+      "type": "object",
+      "required": ["rowId", "kind", "oldLine", "newLine", "content", "decision"],
+      "properties": {
+        "rowId": { "type": "string" },
+        "kind": { "enum": ["context", "added", "deleted"] },
+        "oldLine": { "type": ["integer", "null"], "minimum": 0 },
+        "newLine": { "type": ["integer", "null"], "minimum": 0 },
+        "content": { "type": "string" },
+        "decision": { "enum": ["accept", "reject", "pending"] }
+      }
+    },
+    "dependencyEdge": {
+      "type": "object",
+      "required": ["from", "to", "kind", "confidence"],
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "kind": { "enum": ["import", "package", "heuristic-test"] },
+        "confidence": { "enum": ["high", "medium", "low"] }
+      }
+    },
+    "riskMarker": {
+      "type": "object",
+      "required": ["riskId", "fileId", "hunkId", "rowId", "level", "category", "message"],
+      "properties": {
+        "riskId": { "type": "string" },
+        "fileId": { "type": "string" },
+        "hunkId": { "type": ["string", "null"] },
+        "rowId": { "type": ["string", "null"] },
+        "level": { "enum": ["low", "medium", "high"] },
+        "category": {
+          "enum": ["config", "lockfile", "auth", "public-api", "large-deletion", "test-deletion", "fan-in", "file-decision-only"]
+        },
+        "message": { "type": "string" }
+      }
+    },
+    "testImpact": {
+      "type": "object",
+      "required": ["sourceFileId", "testFileId", "kind", "confidence", "message"],
+      "properties": {
+        "sourceFileId": { "type": ["string", "null"] },
+        "testFileId": { "type": "string" },
+        "kind": { "enum": ["test-added", "test-modified", "test-deleted", "related-test-changed"] },
+        "confidence": { "enum": ["high", "medium", "low"] },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}
+
