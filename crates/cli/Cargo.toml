@@ -15,5 +15,5 @@ agent-diff-core.workspace = true
 agent-diff-git-patch.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+serde.workspace = true
 serde_json.workspace = true
-

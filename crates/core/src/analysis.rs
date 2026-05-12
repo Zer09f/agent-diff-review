@@ -369,8 +369,9 @@ fn stem_for_test_matching(path: &str) -> String {
 }
 
 pub fn normalize_path(path: &str) -> String {
-    let mut parts = Vec::new();
-    for part in path.replace('\\', "/").split('/') {
+    let normalized = path.replace('\\', "/");
+    let mut parts: Vec<&str> = Vec::new();
+    for part in normalized.split('/') {
         match part {
             "" | "." => {}
             ".." => {
