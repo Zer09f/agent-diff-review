@@ -1,0 +1,19 @@
+{
+  "name": "agent-diff-review",
+  "owner": {
+    "name": "agent-diff-review contributors",
+    "email": "maintainers@example.com"
+  },
+  "plugins": [
+    {
+      "name": "agent-diff-review",
+      "description": "Review AI-generated Git worktree changes with a visual diff report and line-level accept/reject decisions.",
+      "source": {
+        "type": "github",
+        "repository": "agent-diff-review/agent-diff-review",
+        "path": "plugins/claude/agent-diff-review"
+      },
+      "version": "0.1.0"
+    }
+  ]
+}

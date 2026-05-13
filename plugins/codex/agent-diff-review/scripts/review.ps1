@@ -4,7 +4,6 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-adr scan --format json --out $SessionPath
-adr report --session $SessionPath --out $ReportPath
+node "$PSScriptRoot/adr-wrapper.mjs" scan --format json --out $SessionPath
+node "$PSScriptRoot/adr-wrapper.mjs" report --session $SessionPath --out $ReportPath
 Write-Output "agent-diff-review report written to $ReportPath"
-

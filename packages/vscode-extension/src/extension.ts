@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import * as vscode from 'vscode';
@@ -9,22 +10,22 @@ const DECISIONS_PATH = '.agent-diff-review/decisions.json';
 
 export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
-    vscode.commands.registerCommand('agentDiffReview.open', openReview),
-    vscode.commands.registerCommand('agentDiffReview.applyDecisions', applyDecisions)
+    vscode.commands.registerCommand('agentDiffReview.open', () => openReview(context)),
+    vscode.commands.registerCommand('agentDiffReview.applyDecisions', () => applyDecisions(context))
   );
 }
 
 export function deactivate() {}
 
-async function openReview() {
+async function openReview(context: vscode.ExtensionContext) {
   const root = workspaceRoot();
   if (!root) {
     vscode.window.showErrorMessage('Open a workspace folder before running agent-diff-review.');
     return;
   }
 
-  await runAdr(root, ['scan', '--format', 'json', '--out', SESSION_PATH]);
-  await runAdr(root, ['report', '--session', SESSION_PATH, '--out', REPORT_PATH]);
+  await runAdr(context, root, ['scan', '--format', 'json', '--out', SESSION_PATH]);
+  await runAdr(context, root, ['report', '--session', SESSION_PATH, '--out', REPORT_PATH]);
 
   const reportHtml = await fs.readFile(path.join(root, REPORT_PATH), 'utf8');
   const panel = vscode.window.createWebviewPanel(
@@ -43,14 +44,14 @@ async function openReview() {
   });
 }
 
-async function applyDecisions() {
+async function applyDecisions(context: vscode.ExtensionContext) {
   const root = workspaceRoot();
   if (!root) {
     vscode.window.showErrorMessage('Open a workspace folder before running agent-diff-review.');
     return;
   }
-  await runAdr(root, ['apply', '--session', SESSION_PATH, '--decisions', DECISIONS_PATH, '--dry-run']);
-  await runAdr(root, ['apply', '--session', SESSION_PATH, '--decisions', DECISIONS_PATH]);
+  await runAdr(context, root, ['apply', '--session', SESSION_PATH, '--decisions', DECISIONS_PATH, '--dry-run']);
+  await runAdr(context, root, ['apply', '--session', SESSION_PATH, '--decisions', DECISIONS_PATH]);
   vscode.window.showInformationMessage('agent-diff-review decisions applied.');
 }
 
@@ -58,13 +59,49 @@ function workspaceRoot() {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
-function adrPath() {
-  return vscode.workspace.getConfiguration('agentDiffReview').get<string>('adrPath') || 'adr';
+function adrPath(context: vscode.ExtensionContext) {
+  const configured = vscode.workspace.getConfiguration('agentDiffReview').get<string>('adrPath')?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  const bundled = bundledAdrPath(context.extensionPath);
+  return bundled ?? 'adr';
 }
 
-function runAdr(cwd: string, args: string[]) {
+function bundledAdrPath(extensionPath: string) {
+  const platform = platformKey();
+  if (!platform) {
+    return undefined;
+  }
+
+  const executable = process.platform === 'win32' ? 'adr.exe' : 'adr';
+  const candidate = path.join(extensionPath, 'bin', platform, executable);
+  return existsSync(candidate) ? candidate : undefined;
+}
+
+function platformKey() {
+  const arch = process.arch === 'x64' || process.arch === 'arm64' ? process.arch : undefined;
+  if (!arch) {
+    return undefined;
+  }
+
+  switch (process.platform) {
+    case 'win32':
+      return `win32-${arch}`;
+    case 'linux':
+      return `linux-${arch}`;
+    case 'darwin':
+      return `darwin-${arch}`;
+    default:
+      return undefined;
+  }
+}
+
+function runAdr(context: vscode.ExtensionContext, cwd: string, args: string[]) {
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(adrPath(), args, { cwd, shell: process.platform === 'win32' });
+    const command = adrPath(context);
+    const child = spawn(command, args, { cwd, shell: process.platform === 'win32' && !path.isAbsolute(command) });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => {

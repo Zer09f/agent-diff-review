@@ -61,7 +61,8 @@ fn scan_and_reject_added_line_in_temp_repo() {
         },
     )
     .unwrap();
-    assert_eq!(fs::read_to_string(dir.path().join("app.ts")).unwrap(), "export const value = 1;\n");
+    let restored = fs::read_to_string(dir.path().join("app.ts")).unwrap();
+    assert_eq!(restored.replace("\r\n", "\n"), "export const value = 1;\n");
 }
 
 fn git<const N: usize>(cwd: &Path, args: [&str; N]) {
@@ -76,4 +77,3 @@ fn git<const N: usize>(cwd: &Path, args: [&str; N]) {
         String::from_utf8_lossy(&output.stderr)
     );
 }
-

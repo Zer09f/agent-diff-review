@@ -1,17 +1,21 @@
-# OpenCode 插件
+# agent-diff-review OpenCode 插件
 
-该包提供一个 OpenCode 插件，用来调用共享的 `adr` 二进制。
+用于从当前 Git 工作区生成 `agent-diff-review` 报告的 OpenCode 插件。
 
-本地开发时，可以将构建后的插件或这个 TypeScript 文件复制到 `.opencode/plugins/`：
+## 配置
 
-```bash
-mkdir -p .opencode/plugins
-cp packages/opencode-plugin/src/index.ts .opencode/plugins/agent-diff-review.ts
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@agent-diff-review/opencode-plugin"]
+}
 ```
 
-插件会监听 `session.idle` 和 `session.diff` 事件，然后写入：
+插件会暴露 `adr_review` 工具，并写入：
 
-- `.agent-diff-review/session.json`
-- `.agent-diff-review/report.html`
+```text
+.agent-diff-review/session.json
+.agent-diff-review/report.html
+```
 
-它还会暴露一个名为 `adr_review` 的自定义工具。
+插件会优先使用内置 `adr` 二进制。需要自定义路径时，可以设置 `ADR_PATH`。

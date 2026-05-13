@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 #[command(name = "adr")]
+#[command(version)]
 #[command(about = "Visual review and line-level accept/reject for AI-generated code changes")]
 struct Cli {
     #[command(subcommand)]

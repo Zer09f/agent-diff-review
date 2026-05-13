@@ -9,5 +9,4 @@ $argsList = @("apply", "--session", $SessionPath, "--decisions", $DecisionPath)
 if ($DryRun) {
   $argsList += "--dry-run"
 }
-adr @argsList
-
+node "$PSScriptRoot/adr-wrapper.mjs" @argsList

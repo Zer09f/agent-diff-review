@@ -4,6 +4,10 @@ dist/
 out/
 *.vsix
 .agent-diff-review/
+packages/opencode-plugin/bin/
+packages/vscode-extension/bin/
+plugins/claude/agent-diff-review/bin/
+plugins/codex/agent-diff-review/bin/
 .DS_Store
 Thumbs.db
 ~$*

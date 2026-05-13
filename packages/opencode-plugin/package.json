@@ -1,10 +1,17 @@
 {
   "name": "@agent-diff-review/opencode-plugin",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit"
@@ -17,4 +24,3 @@
     "typescript": "^5.6.3"
   }
 }
-

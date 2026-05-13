@@ -6,6 +6,9 @@
   "license": "MIT",
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "build:release": "node scripts/build-release.mjs",
+    "package:plugins": "node scripts/package-plugins.mjs",
+    "sync:binaries": "node scripts/sync-binaries.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "workspaces": [
@@ -17,4 +20,3 @@
     "typescript": "^5.6.3"
   }
 }
-

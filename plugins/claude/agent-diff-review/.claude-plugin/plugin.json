@@ -1,0 +1,21 @@
+{
+  "name": "agent-diff-review",
+  "version": "0.1.0",
+  "description": "Review AI-generated Git worktree changes with a visual diff report and line-level accept/reject decisions.",
+  "author": {
+    "name": "agent-diff-review contributors",
+    "url": "https://github.com/agent-diff-review/agent-diff-review"
+  },
+  "homepage": "https://github.com/agent-diff-review/agent-diff-review",
+  "repository": "https://github.com/agent-diff-review/agent-diff-review",
+  "license": "MIT",
+  "keywords": ["ai", "diff", "review", "claude-code", "git"],
+  "commands": "./commands",
+  "skills": "./skills",
+  "interface": {
+    "displayName": "agent-diff-review",
+    "shortDescription": "Visual review for AI-generated code changes.",
+    "longDescription": "Scan Git worktree changes, generate an interactive review report, and apply line-level accept/reject decisions through the bundled adr binary.",
+    "category": "Productivity"
+  }
+}

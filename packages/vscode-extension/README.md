@@ -1,10 +1,10 @@
-# VS Code 和 Trae 扩展
+# agent-diff-review VS Code 扩展
 
-该 VS Code 扩展封装 `adr` 二进制，并在 Webview 中打开生成的 review 报告。
+面向 AI 代码变更的可视化 review 扩展，支持逐行接受或拒绝 Git 工作区修改。
 
-命令：
+## 命令
 
 - `Agent Diff Review: Open Review`
 - `Agent Diff Review: Apply Decisions`
 
-扩展打包后，Trae 可以通过 VSIX 分发路径使用该包。
+扩展会优先使用内置 `adr` 二进制。需要自定义路径时，可以配置 `agentDiffReview.adrPath`。

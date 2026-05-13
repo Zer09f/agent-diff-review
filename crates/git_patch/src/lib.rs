@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use regex::Regex;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -174,7 +174,7 @@ fn merge_content_with_decisions(
     rejected_rows: &mut usize,
 ) -> Result<String> {
     let mut out = Vec::new();
-    let mut old_lines = split_preserve_none(file.before_content.as_deref().unwrap_or(""));
+    let old_lines = split_preserve_none(file.before_content.as_deref().unwrap_or(""));
     let mut old_cursor = 1usize;
 
     for hunk in &file.hunks {
