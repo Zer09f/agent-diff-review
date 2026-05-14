@@ -26,6 +26,31 @@ bin/<platform>/adr.exe
 
 ## 本地 Release 构建
 
+生成面向当前平台的完整下载包：
+
+```bash
+npm run package:downloads
+```
+
+产物目录：
+
+```text
+dist/release
+```
+
+包含：
+
+```text
+adr-v<version>-<platform>.zip
+agent-diff-review-vscode-<platform>-<version>.vsix
+agent-diff-review-opencode-plugin-<version>.tgz
+agent-diff-review-codex-v<version>-<platform>.zip
+agent-diff-review-claude-v<version>-<platform>.zip
+SHA256SUMS
+```
+
+只生成 CLI、Codex 和 Claude Code 包：
+
 ```bash
 npm run build:release
 ```

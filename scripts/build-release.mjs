@@ -8,11 +8,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 const dist = join(root, "dist", "release");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-const target = process.env.ADR_TARGET_PLATFORM ?? currentPlatform();
+const args = parseArgs(process.argv.slice(2));
+const target = args.platform ?? process.env.ADR_TARGET_PLATFORM ?? currentPlatform();
 const executable = target.startsWith("win32") ? "adr.exe" : "adr";
 const cargoBinary = join(root, "target", "release", executable);
 
-rmSync(dist, { recursive: true, force: true });
+if (!args.noClean) {
+  rmSync(dist, { recursive: true, force: true });
+}
 mkdirSync(dist, { recursive: true });
 
 execFileSync("cargo", ["build", "--release", "-p", "adr"], { cwd: root, stdio: "inherit" });
@@ -71,6 +74,21 @@ function writeChecksums(directory, platform) {
   const content = `${lines.sort().join("\n")}\n`;
   writeFileSync(join(directory, "SHA256SUMS"), content);
   writeFileSync(join(directory, `SHA256SUMS-${platform}`), content);
+}
+
+function parseArgs(values) {
+  const parsed = { noClean: false };
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (value === "--platform") {
+      parsed.platform = values[++index];
+    } else if (value === "--no-clean") {
+      parsed.noClean = true;
+    } else {
+      throw new Error(`Unknown argument: ${value}`);
+    }
+  }
+  return parsed;
 }
 
 function currentPlatform() {

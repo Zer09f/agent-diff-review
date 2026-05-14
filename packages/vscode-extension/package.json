@@ -19,7 +19,7 @@
     "commands": [
       {
         "command": "agentDiffReview.open",
-        "title": "Agent Diff Review: Open Review"
+        "title": "Agent Diff Review: Open Native Review"
       },
       {
         "command": "agentDiffReview.applyDecisions",
@@ -31,8 +31,8 @@
       "properties": {
         "agentDiffReview.adrPath": {
           "type": "string",
-          "default": "adr",
-          "description": "Path to the adr binary."
+          "default": "",
+          "description": "Optional path to a custom adr binary. Leave empty to use the bundled binary."
         }
       }
     }

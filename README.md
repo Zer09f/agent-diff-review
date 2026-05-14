@@ -82,3 +82,11 @@ npm run build
 ```bash
 npm run build:release
 ```
+
+生成当前平台“下载即可使用”的完整安装包：
+
+```bash
+npm run package:downloads
+```
+
+产物会写入 `dist/release`，包括 CLI zip、VS Code VSIX、OpenCode tgz、Codex 插件 zip 和 Claude Code 插件 zip。

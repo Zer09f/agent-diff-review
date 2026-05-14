@@ -7,6 +7,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "build:release": "node scripts/build-release.mjs",
+    "package:downloads": "node scripts/package-downloads.mjs",
     "package:plugins": "node scripts/package-plugins.mjs",
     "sync:binaries": "node scripts/sync-binaries.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"

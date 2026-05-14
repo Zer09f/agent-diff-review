@@ -143,7 +143,7 @@ fn render_report(session: &ReviewSession) -> String {
 </html>
 "#,
         report_css(),
-        escape_html(&session_json),
+        escape_json_for_script(&session_json),
         report_js()
     )
 }
@@ -391,10 +391,42 @@ render();
 "#
 }
 
-fn escape_html(value: &str) -> String {
+fn escape_json_for_script(value: &str) -> String {
     value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+        .replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn report_embeds_parseable_json_session_data() {
+        let session = ReviewSession {
+            schema_version: "0.1.0".to_string(),
+            workspace_root: "C:/tmp/<workspace>".to_string(),
+            base_ref: "HEAD".to_string(),
+            head_ref: "main".to_string(),
+            created_at: "2026-05-14T00:00:00Z".to_string(),
+            worktree_hash: "hash".to_string(),
+            files: Vec::new(),
+            dependency_edges: Vec::new(),
+            risk_markers: Vec::new(),
+            test_impacts: Vec::new(),
+        };
+
+        let report = render_report(&session);
+        let start_marker = r#"<script id="session-data" type="application/json">"#;
+        let start = report.find(start_marker).expect("session data script") + start_marker.len();
+        let end = report[start..].find("</script>").expect("script close") + start;
+        let embedded = &report[start..end];
+
+        assert!(!embedded.contains("&quot;"));
+        assert!(serde_json::from_str::<ReviewSession>(embedded).is_ok());
+        assert!(embedded.contains("\\u003cworkspace\\u003e"));
+    }
 }
