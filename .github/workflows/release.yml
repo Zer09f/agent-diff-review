@@ -63,14 +63,17 @@ jobs:
       - name: Unpack CLI
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p tmp-cli
           if [[ "${{ matrix.target }}" == win32-* ]]; then
             unzip -q dist/release/adr-v*-*.zip -d tmp-cli
-            cp tmp-cli/*/adr.exe target-adr
+            cli_binary="$(find tmp-cli -type f -name adr.exe | head -n 1)"
           else
             tar -xzf dist/release/adr-v*-*.tar.gz -C tmp-cli
-            cp tmp-cli/*/adr target-adr
+            cli_binary="$(find tmp-cli -type f -name adr | head -n 1)"
           fi
+          test -n "$cli_binary"
+          cp "$cli_binary" target-adr
       - run: node scripts/sync-binaries.mjs --platform ${{ matrix.target }} --source target-adr
       - run: npm run build --workspace packages/vscode-extension
       - run: npm run package --workspace packages/vscode-extension -- --target ${{ matrix.target }}
@@ -97,16 +100,20 @@ jobs:
       - name: Sync platform binaries
         shell: bash
         run: |
+          set -euo pipefail
           for dir in platform-artifacts/release-*; do
             target="${dir##*/release-}"
-            mkdir -p tmp-cli "$dir/unpacked"
+            rm -rf "$dir/unpacked"
+            mkdir -p "$dir/unpacked"
             if [[ "$target" == win32-* ]]; then
               unzip -q "$dir"/adr-v*-*.zip -d "$dir/unpacked"
-              node scripts/sync-binaries.mjs --platform "$target" --source "$dir/unpacked"/*/adr.exe
+              cli_binary="$(find "$dir/unpacked" -type f -name adr.exe | head -n 1)"
             else
               tar -xzf "$dir"/adr-v*-*.tar.gz -C "$dir/unpacked"
-              node scripts/sync-binaries.mjs --platform "$target" --source "$dir/unpacked"/*/adr
+              cli_binary="$(find "$dir/unpacked" -type f -name adr | head -n 1)"
             fi
+            test -n "$cli_binary"
+            node scripts/sync-binaries.mjs --platform "$target" --source "$cli_binary"
           done
       - run: npm run build --workspace packages/opencode-plugin
       - run: npm pack --workspace packages/opencode-plugin
