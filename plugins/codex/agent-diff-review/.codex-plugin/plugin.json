@@ -1,6 +1,6 @@
 {
   "name": "agent-diff-review",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Review AI-generated worktree changes with a visual diff map and line-level accept/reject decisions.",
   "author": {
     "name": "agent-diff-review contributors",
@@ -31,4 +31,3 @@
     "brandColor": "#176B87"
   }
 }
-
