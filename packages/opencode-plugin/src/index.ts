@@ -10,7 +10,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export const AgentDiffReviewPlugin: Plugin = async ({ $, client }) => {
   async function scanAndReport() {
     const adr = resolveAdrPath();
-    await $`${adr} scan --format json --out ${DEFAULT_SESSION_PATH}`;
+    await $`${adr} snapshot init`;
+    await $`${adr} scan --source snapshot --format json --out ${DEFAULT_SESSION_PATH}`;
     await $`${adr} report --session ${DEFAULT_SESSION_PATH} --out ${DEFAULT_REPORT_PATH}`;
     await client.app.log({
       body: {

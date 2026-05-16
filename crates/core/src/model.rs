@@ -9,10 +9,25 @@ pub struct ReviewSession {
     pub head_ref: String,
     pub created_at: String,
     pub worktree_hash: String,
+    #[serde(default)]
+    pub source: Option<ReviewSource>,
+    #[serde(default)]
+    pub baseline_id: Option<String>,
+    #[serde(default)]
+    pub baseline_hash: Option<String>,
+    #[serde(default)]
+    pub tracked_paths: Vec<String>,
     pub files: Vec<ChangedFile>,
     pub dependency_edges: Vec<DependencyEdge>,
     pub risk_markers: Vec<RiskMarker>,
     pub test_impacts: Vec<TestImpact>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReviewSource {
+    Git,
+    Snapshot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

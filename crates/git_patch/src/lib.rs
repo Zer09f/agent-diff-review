@@ -1,6 +1,6 @@
 use agent_diff_core::{
     analyze_session, stable_id, ChangeType, ChangedFile, DecisionSet, DiffHunk, DiffRow, Language,
-    LineDecision, ReviewSession, RowKind,
+    LineDecision, ReviewSession, ReviewSource, RowKind,
 };
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
@@ -12,13 +12,22 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::NamedTempFile;
+use walkdir::WalkDir;
 
 const SCHEMA_VERSION: &str = "0.1.0";
+pub const DEFAULT_BASELINE_PATH: &str = ".agent-diff-review/baseline.json";
 
 #[derive(Debug, Clone)]
 pub struct ScanOptions {
     pub workspace: PathBuf,
     pub base_ref: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SnapshotOptions {
+    pub workspace: PathBuf,
+    pub baseline: PathBuf,
+    pub force: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +42,27 @@ pub struct ApplySummary {
     pub files_checked: usize,
     pub files_changed: usize,
     pub rejected_rows: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BaselineSnapshot {
+    pub schema_version: String,
+    pub baseline_id: String,
+    pub workspace_root: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub baseline_hash: String,
+    pub files: Vec<BaselineFile>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BaselineFile {
+    pub path: String,
+    pub content_hash: String,
+    pub content: String,
+    pub updated_at: String,
 }
 
 pub fn scan_worktree(options: &ScanOptions) -> Result<ReviewSession> {
@@ -67,6 +97,69 @@ pub fn scan_worktree(options: &ScanOptions) -> Result<ReviewSession> {
         head_ref,
         created_at: Utc::now().to_rfc3339(),
         worktree_hash,
+        source: Some(ReviewSource::Git),
+        baseline_id: None,
+        baseline_hash: None,
+        tracked_paths: Vec::new(),
+        files,
+        dependency_edges: Vec::new(),
+        risk_markers: Vec::new(),
+        test_impacts: Vec::new(),
+    };
+    Ok(analyze_session(session))
+}
+
+pub fn init_snapshot(options: &SnapshotOptions) -> Result<BaselineSnapshot> {
+    let root = workspace_root(&options.workspace)?;
+    let baseline_path = root.join(&options.baseline);
+    if baseline_path.exists() && !options.force {
+        return read_snapshot(&baseline_path);
+    }
+    let now = Utc::now().to_rfc3339();
+    let mut files = Vec::new();
+    for path in snapshot_candidate_paths(&root)? {
+        let abs = root.join(&path);
+        let Ok(content) = fs::read_to_string(&abs) else {
+            continue;
+        };
+        files.push(BaselineFile {
+            path,
+            content_hash: content_hash(&content),
+            content,
+            updated_at: now.clone(),
+        });
+    }
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    let baseline_hash = compute_baseline_hash(&files);
+    let snapshot = BaselineSnapshot {
+        schema_version: SCHEMA_VERSION.to_string(),
+        baseline_id: stable_id(&[&root.to_string_lossy(), &now, &baseline_hash]),
+        workspace_root: root.to_string_lossy().to_string(),
+        created_at: now.clone(),
+        updated_at: now,
+        baseline_hash,
+        files,
+    };
+    write_snapshot(&baseline_path, &snapshot)?;
+    Ok(snapshot)
+}
+
+pub fn scan_snapshot(options: &SnapshotOptions) -> Result<ReviewSession> {
+    let root = workspace_root(&options.workspace)?;
+    let snapshot = read_snapshot(&root.join(&options.baseline))?;
+    let files = changed_files_from_snapshot(&root, &snapshot)?;
+    let worktree_hash = compute_worktree_hash(&files);
+    let session = ReviewSession {
+        schema_version: SCHEMA_VERSION.to_string(),
+        workspace_root: root.to_string_lossy().to_string(),
+        base_ref: "snapshot".to_string(),
+        head_ref: "workspace".to_string(),
+        created_at: Utc::now().to_rfc3339(),
+        worktree_hash,
+        source: Some(ReviewSource::Snapshot),
+        baseline_id: Some(snapshot.baseline_id.clone()),
+        baseline_hash: Some(snapshot.baseline_hash.clone()),
+        tracked_paths: snapshot.files.iter().map(|file| file.path.clone()).collect(),
         files,
         dependency_edges: Vec::new(),
         risk_markers: Vec::new(),
@@ -132,6 +225,76 @@ pub fn apply_decisions(session: &ReviewSession, decisions: &DecisionSet, options
     })
 }
 
+pub fn apply_snapshot_decisions(
+    session: &ReviewSession,
+    decisions: &DecisionSet,
+    options: &ApplyOptions,
+    snapshot_options: &SnapshotOptions,
+) -> Result<ApplySummary> {
+    if session.worktree_hash != decisions.session_worktree_hash {
+        bail!(
+            "decision set was created for worktree hash {}, but session hash is {}",
+            decisions.session_worktree_hash,
+            session.worktree_hash
+        );
+    }
+    let root = workspace_root(&options.workspace)?;
+    let mut snapshot = read_snapshot(&root.join(&snapshot_options.baseline))?;
+    if session.baseline_id.as_deref() != Some(snapshot.baseline_id.as_str()) {
+        bail!("review session was created for a different snapshot baseline");
+    }
+    if session.baseline_hash.as_deref() != Some(snapshot.baseline_hash.as_str()) {
+        bail!("snapshot baseline changed since scan");
+    }
+
+    let current = scan_snapshot(snapshot_options)?;
+    if current.worktree_hash != session.worktree_hash {
+        bail!(
+            "worktree changed since scan: current hash {}, session hash {}",
+            current.worktree_hash,
+            session.worktree_hash
+        );
+    }
+
+    let decision_map = build_decision_map(decisions);
+    let mut files_changed = 0usize;
+    let mut rejected_rows = 0usize;
+    let mut outputs = Vec::new();
+
+    for file in &session.files {
+        if file.file_decision_only || file.binary {
+            continue;
+        }
+        let after = file.after_content.as_deref().unwrap_or("");
+        let mut rejected_for_file = 0usize;
+        let merged = merge_content_with_decisions(file, &decision_map, &mut rejected_for_file)?;
+        rejected_rows += rejected_for_file;
+        if merged != after {
+            files_changed += 1;
+        }
+        outputs.push((file.path.clone(), merged));
+    }
+
+    if !options.dry_run {
+        for (path, content) in &outputs {
+            let abs = root.join(path);
+            if let Some(parent) = abs.parent() {
+                fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+            }
+            fs::write(&abs, content).with_context(|| format!("write {}", abs.display()))?;
+        }
+        refresh_snapshot_files(&root, &mut snapshot)?;
+        write_snapshot(&root.join(&snapshot_options.baseline), &snapshot)?;
+    }
+
+    Ok(ApplySummary {
+        dry_run: options.dry_run,
+        files_checked: session.files.len(),
+        files_changed,
+        rejected_rows,
+    })
+}
+
 pub fn compute_worktree_hash(files: &[ChangedFile]) -> String {
     let mut hasher = Sha256::new();
     for file in files {
@@ -149,6 +312,284 @@ pub fn compute_worktree_hash(files: &[ChangedFile]) -> String {
         hasher.update([0]);
     }
     format!("{:x}", hasher.finalize())
+}
+
+pub fn content_hash(content: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn compute_baseline_hash(files: &[BaselineFile]) -> String {
+    let mut hasher = Sha256::new();
+    for file in files {
+        hasher.update(file.path.as_bytes());
+        hasher.update([0]);
+        hasher.update(file.content_hash.as_bytes());
+        hasher.update([0]);
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+fn read_snapshot(path: &Path) -> Result<BaselineSnapshot> {
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("read snapshot baseline {}", path.display()))?;
+    serde_json::from_str(&content).with_context(|| format!("parse snapshot baseline {}", path.display()))
+}
+
+fn write_snapshot(path: &Path, snapshot: &BaselineSnapshot) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    let json = serde_json::to_string_pretty(snapshot)?;
+    fs::write(path, json).with_context(|| format!("write snapshot baseline {}", path.display()))
+}
+
+fn refresh_snapshot_files(root: &Path, snapshot: &mut BaselineSnapshot) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    let mut files = Vec::new();
+    for path in snapshot_candidate_paths(root)? {
+        let abs = root.join(&path);
+        let Ok(content) = fs::read_to_string(&abs) else {
+            continue;
+        };
+        files.push(BaselineFile {
+            path,
+            content_hash: content_hash(&content),
+            content,
+            updated_at: now.clone(),
+        });
+    }
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    snapshot.updated_at = now;
+    snapshot.files = files;
+    snapshot.baseline_hash = compute_baseline_hash(&snapshot.files);
+    Ok(())
+}
+
+fn snapshot_candidate_paths(root: &Path) -> Result<Vec<String>> {
+    let mut paths = Vec::new();
+    for entry in WalkDir::new(root).into_iter().filter_entry(|entry| {
+        let Ok(relative) = entry.path().strip_prefix(root) else {
+            return true;
+        };
+        let path = normalize_relative_path(relative);
+        path.is_empty() || is_snapshot_candidate_prefix(&path)
+    }) {
+        let entry = entry.with_context(|| format!("walk {}", root.display()))?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let Ok(relative) = entry.path().strip_prefix(root) else {
+            continue;
+        };
+        let path = normalize_relative_path(relative);
+        if is_snapshot_candidate(&path) {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+fn is_snapshot_candidate(path: &str) -> bool {
+    is_snapshot_candidate_prefix(path) && !path.ends_with(".vsix")
+}
+
+fn is_snapshot_candidate_prefix(path: &str) -> bool {
+    !path.starts_with(".git")
+        && !path.starts_with(".agent-diff-review")
+        && !path.starts_with("target")
+        && !path.starts_with("node_modules")
+        && !path.starts_with("dist")
+        && !path.contains("/.git/")
+        && !path.contains("/node_modules/")
+        && !path.contains("/target/")
+}
+
+fn normalize_relative_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn changed_files_from_snapshot(root: &Path, snapshot: &BaselineSnapshot) -> Result<Vec<ChangedFile>> {
+    let mut changed = Vec::new();
+    for file in &snapshot.files {
+        let abs = root.join(&file.path);
+        let current = fs::read_to_string(&abs).ok();
+        if current.as_deref() == Some(file.content.as_str()) {
+            continue;
+        }
+        let after = current.unwrap_or_default();
+        changed.push(changed_file_from_contents(
+            &file.path,
+            &file.content,
+            &after,
+            if abs.exists() { ChangeType::Modified } else { ChangeType::Deleted },
+        ));
+    }
+
+    let known: std::collections::HashSet<&str> = snapshot.files.iter().map(|file| file.path.as_str()).collect();
+    for path in snapshot_candidate_paths(root)? {
+        if known.contains(path.as_str()) {
+            continue;
+        }
+        let abs = root.join(&path);
+        let Ok(content) = fs::read_to_string(&abs) else {
+            continue;
+        };
+        if content.is_empty() {
+            continue;
+        }
+        changed.push(changed_file_from_contents(&path, "", &content, ChangeType::Added));
+    }
+
+    changed.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(changed)
+}
+
+fn changed_file_from_contents(path: &str, before: &str, after: &str, change_type: ChangeType) -> ChangedFile {
+    let file_id = stable_id(&[path, "file"]);
+    let mut additions = 0usize;
+    let mut deletions = 0usize;
+    let hunks = hunks_from_contents(&file_id, before, after, &mut additions, &mut deletions);
+    ChangedFile {
+        file_id,
+        path: path.to_string(),
+        old_path: None,
+        change_type,
+        binary: false,
+        file_decision_only: false,
+        language: agent_diff_core::analysis::classify_language(path),
+        additions,
+        deletions,
+        before_content: Some(before.to_string()),
+        after_content: Some(after.to_string()),
+        hunks,
+    }
+}
+
+fn hunks_from_contents(
+    file_id: &str,
+    before: &str,
+    after: &str,
+    additions: &mut usize,
+    deletions: &mut usize,
+) -> Vec<DiffHunk> {
+    let old_lines = split_preserve_none(before);
+    let new_lines = split_preserve_none(after);
+    let rows = diff_rows(file_id, &old_lines, &new_lines, additions, deletions);
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let hunk_id = stable_id(&[file_id, "snapshot", "1"]);
+    let rows = rows
+        .into_iter()
+        .enumerate()
+        .map(|(index, mut row)| {
+            row.row_id = stable_id(&[&hunk_id, &(index + 1).to_string(), &format!("{:?}", row.kind), &row.content]);
+            row
+        })
+        .collect::<Vec<_>>();
+    let old_start = rows
+        .iter()
+        .find_map(|row| row.old_line)
+        .unwrap_or(if old_lines.is_empty() { 0 } else { 1 });
+    let new_start = rows
+        .iter()
+        .find_map(|row| row.new_line)
+        .unwrap_or(if new_lines.is_empty() { 0 } else { 1 });
+    vec![DiffHunk {
+        hunk_id,
+        old_start,
+        old_lines: rows.iter().filter(|row| row.old_line.is_some()).count(),
+        new_start,
+        new_lines: rows.iter().filter(|row| row.new_line.is_some()).count(),
+        header: "snapshot baseline".to_string(),
+        rows,
+    }]
+}
+
+fn diff_rows(
+    file_id: &str,
+    old_lines: &[String],
+    new_lines: &[String],
+    additions: &mut usize,
+    deletions: &mut usize,
+) -> Vec<DiffRow> {
+    let table = lcs_table(old_lines, new_lines);
+    let mut rows = Vec::new();
+    let mut old_index = 0usize;
+    let mut new_index = 0usize;
+    while old_index < old_lines.len() || new_index < new_lines.len() {
+        if old_index < old_lines.len()
+            && new_index < new_lines.len()
+            && old_lines[old_index] == new_lines[new_index]
+        {
+            rows.push(DiffRow {
+                row_id: String::new(),
+                kind: RowKind::Context,
+                old_line: Some(old_index + 1),
+                new_line: Some(new_index + 1),
+                content: old_lines[old_index].clone(),
+                decision: LineDecision::Pending,
+            });
+            old_index += 1;
+            new_index += 1;
+        } else if new_index < new_lines.len()
+            && (old_index == old_lines.len() || table[old_index][new_index + 1] > table[old_index + 1][new_index])
+        {
+            *additions += 1;
+            rows.push(DiffRow {
+                row_id: String::new(),
+                kind: RowKind::Added,
+                old_line: None,
+                new_line: Some(new_index + 1),
+                content: new_lines[new_index].clone(),
+                decision: LineDecision::Pending,
+            });
+            new_index += 1;
+        } else if old_index < old_lines.len() {
+            *deletions += 1;
+            rows.push(DiffRow {
+                row_id: String::new(),
+                kind: RowKind::Deleted,
+                old_line: Some(old_index + 1),
+                new_line: None,
+                content: old_lines[old_index].clone(),
+                decision: LineDecision::Pending,
+            });
+            old_index += 1;
+        }
+    }
+    trim_context_rows(rows, file_id)
+}
+
+fn lcs_table(old_lines: &[String], new_lines: &[String]) -> Vec<Vec<usize>> {
+    let mut table = vec![vec![0usize; new_lines.len() + 1]; old_lines.len() + 1];
+    for old_index in (0..old_lines.len()).rev() {
+        for new_index in (0..new_lines.len()).rev() {
+            table[old_index][new_index] = if old_lines[old_index] == new_lines[new_index] {
+                table[old_index + 1][new_index + 1] + 1
+            } else {
+                table[old_index + 1][new_index].max(table[old_index][new_index + 1])
+            };
+        }
+    }
+    table
+}
+
+fn trim_context_rows(rows: Vec<DiffRow>, _file_id: &str) -> Vec<DiffRow> {
+    let first_change = rows.iter().position(|row| row.kind != RowKind::Context);
+    let last_change = rows.iter().rposition(|row| row.kind != RowKind::Context);
+    match (first_change, last_change) {
+        (Some(first), Some(last)) => {
+            let start = first.saturating_sub(3);
+            let end = (last + 4).min(rows.len());
+            rows[start..end].to_vec()
+        }
+        _ => Vec::new(),
+    }
 }
 
 fn build_decision_map(decisions: &DecisionSet) -> HashMap<(&str, &str, &str), LineDecision> {
@@ -587,6 +1028,17 @@ fn ensure_git_repo(workspace: &Path) -> Result<()> {
     git_output(workspace, ["rev-parse", "--show-toplevel"])
         .map(|_| ())
         .context("agent-diff-review requires a Git repository")
+}
+
+fn workspace_root(workspace: &Path) -> Result<PathBuf> {
+    let root = if workspace.is_absolute() {
+        workspace.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .context("resolve current directory")?
+            .join(workspace)
+    };
+    Ok(root.canonicalize().unwrap_or(root))
 }
 
 fn git_root(workspace: &Path) -> Result<PathBuf> {

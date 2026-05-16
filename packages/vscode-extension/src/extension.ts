@@ -6,9 +6,12 @@ import * as vscode from 'vscode';
 
 const SESSION_PATH = '.agent-diff-review/session.json';
 const DECISIONS_PATH = '.agent-diff-review/decisions.json';
+const BASELINE_PATH = '.agent-diff-review/baseline.json';
+const DEFAULT_AUTO_REVIEW_DELAY_MS = 1000;
 
 type RowKind = 'context' | 'added' | 'deleted';
 type ChangeType = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'untracked';
+type ReviewSource = 'git' | 'snapshot';
 
 interface ReviewSession {
   schemaVersion: string;
@@ -17,6 +20,10 @@ interface ReviewSession {
   headRef: string;
   createdAt: string;
   worktreeHash: string;
+  source?: ReviewSource | null;
+  baselineId?: string | null;
+  baselineHash?: string | null;
+  trackedPaths?: string[];
   files: ChangedFile[];
 }
 
@@ -69,8 +76,12 @@ interface ReviewBlock {
   anchorLine: number;
 }
 
-const acceptedBlocks = new Set<string>();
+const acceptedBlocks = new Map<string, string>();
 let currentSession: ReviewSession | undefined;
+let autoReviewTimer: ReturnType<typeof setTimeout> | undefined;
+let autoReviewInFlight: Promise<ReviewSession | undefined> | undefined;
+let autoReviewQueued = false;
+let lastSilentError: string | undefined;
 
 const addedDecoration = vscode.window.createTextEditorDecorationType({
   isWholeLine: true,
@@ -134,7 +145,7 @@ class ReviewCodeLensProvider implements vscode.CodeLensProvider {
     );
 
     for (const block of fileBlocks(file)) {
-      if (acceptedBlocks.has(blockKey(file.fileId, block.blockId))) {
+      if (isBlockAccepted(file, block)) {
         continue;
       }
       const line = clampLine(document, block.anchorLine - 1);
@@ -161,21 +172,54 @@ let codeLensProvider: ReviewCodeLensProvider;
 
 export function activate(context: vscode.ExtensionContext) {
   codeLensProvider = new ReviewCodeLensProvider();
+  const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
   context.subscriptions.push(
     addedDecoration,
     changedDecoration,
     deletedDecoration,
     codeLensProvider,
+    fileWatcher,
     vscode.languages.registerCodeLensProvider({ scheme: 'file' }, codeLensProvider),
-    vscode.window.onDidChangeVisibleTextEditors(applyDecorationsToVisibleEditors),
-    vscode.workspace.onDidChangeTextDocument((event) => applyDecorations(event.document)),
+    vscode.window.onDidChangeVisibleTextEditors(() => {
+      scheduleAutoReview(context);
+      applyDecorationsToVisibleEditors();
+    }),
+    vscode.window.onDidChangeActiveTextEditor(() => scheduleAutoReview(context)),
+    vscode.workspace.onDidOpenTextDocument((document) => {
+      if (isWorkspaceDocument(document)) {
+        scheduleAutoReview(context);
+      }
+    }),
+    vscode.workspace.onDidSaveTextDocument((document) => {
+      if (isWorkspaceDocument(document)) {
+        scheduleAutoReview(context, 250);
+      }
+    }),
+    vscode.workspace.onDidChangeTextDocument((event) => {
+      applyDecorations(event.document);
+      if (isWorkspaceDocument(event.document) && !event.document.isDirty) {
+        scheduleAutoReview(context);
+      }
+    }),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      currentSession = undefined;
+      acceptedBlocks.clear();
+      scheduleAutoReview(context, 250);
+      applyDecorationsToVisibleEditors();
+      codeLensProvider.refresh();
+    }),
+    fileWatcher.onDidChange((uri) => scheduleAutoReviewForUri(context, uri)),
+    fileWatcher.onDidCreate((uri) => scheduleAutoReviewForUri(context, uri)),
+    fileWatcher.onDidDelete((uri) => scheduleAutoReviewForUri(context, uri)),
     vscode.commands.registerCommand('agentDiffReview.open', () => openNativeReview(context)),
     vscode.commands.registerCommand('agentDiffReview.applyDecisions', () => applyDecisions(context)),
     vscode.commands.registerCommand('agentDiffReview.acceptBlock', (args: BlockCommandArgs) => acceptBlock(args)),
     vscode.commands.registerCommand('agentDiffReview.rejectBlock', (args: BlockCommandArgs) => rejectBlock(args)),
-    vscode.commands.registerCommand('agentDiffReview.acceptFile', (args: FileCommandArgs) => acceptFile(args)),
-    vscode.commands.registerCommand('agentDiffReview.rejectFile', (args: FileCommandArgs) => rejectFile(args))
+    vscode.commands.registerCommand('agentDiffReview.acceptFile', (args: FileCommandArgs) => acceptFile(context, args)),
+    vscode.commands.registerCommand('agentDiffReview.rejectFile', (args: FileCommandArgs) => rejectFile(context, args))
   );
+
+  scheduleAutoReview(context, 250);
 }
 
 export function deactivate() {}
@@ -187,11 +231,13 @@ async function openNativeReview(context: vscode.ExtensionContext) {
     return;
   }
 
-  await runAdr(context, root, ['scan', '--format', 'json', '--out', SESSION_PATH]);
-  currentSession = await readSession(root);
+  const session = await refreshReviewSession(context, { silent: false });
+  if (!session) {
+    return;
+  }
   acceptedBlocks.clear();
 
-  const reviewable = currentSession.files.filter((file) => isReviewableFile(file));
+  const reviewable = session.files.filter((file) => isReviewableFile(file));
   if (reviewable.length === 0) {
     vscode.window.showInformationMessage('agent-diff-review found no reviewable text changes.');
     applyDecorationsToVisibleEditors();
@@ -216,9 +262,124 @@ async function applyDecisions(context: vscode.ExtensionContext) {
     vscode.window.showErrorMessage('Open a workspace folder before running agent-diff-review.');
     return;
   }
-  await runAdr(context, root, ['apply', '--session', SESSION_PATH, '--decisions', DECISIONS_PATH, '--dry-run']);
-  await runAdr(context, root, ['apply', '--session', SESSION_PATH, '--decisions', DECISIONS_PATH]);
+  await runAdr(context, root, [
+    'apply',
+    '--source',
+    'snapshot',
+    '--session',
+    SESSION_PATH,
+    '--decisions',
+    DECISIONS_PATH,
+    '--baseline',
+    BASELINE_PATH,
+    '--dry-run'
+  ]);
+  await runAdr(context, root, [
+    'apply',
+    '--source',
+    'snapshot',
+    '--session',
+    SESSION_PATH,
+    '--decisions',
+    DECISIONS_PATH,
+    '--baseline',
+    BASELINE_PATH
+  ]);
   vscode.window.showInformationMessage('agent-diff-review decisions applied.');
+}
+
+function scheduleAutoReview(context: vscode.ExtensionContext, delayMs = autoReviewDelayMs()) {
+  if (!autoReviewEnabled() || !hasVisibleWorkspaceDocument()) {
+    return;
+  }
+
+  if (autoReviewTimer) {
+    clearTimeout(autoReviewTimer);
+  }
+
+  autoReviewTimer = setTimeout(() => {
+    autoReviewTimer = undefined;
+    void refreshReviewSession(context, { silent: true });
+  }, Math.max(250, delayMs));
+}
+
+function scheduleAutoReviewForUri(context: vscode.ExtensionContext, uri: vscode.Uri) {
+  if (isWorkspaceFileUri(uri)) {
+    scheduleAutoReview(context);
+  }
+}
+
+async function refreshReviewSession(context: vscode.ExtensionContext, options: { silent: boolean }) {
+  const root = workspaceRoot();
+  if (!root) {
+    return undefined;
+  }
+
+  if (autoReviewInFlight) {
+    autoReviewQueued = true;
+    if (options.silent) {
+      return undefined;
+    }
+    await autoReviewInFlight;
+  }
+
+  autoReviewInFlight = (async () => {
+    try {
+      await ensureSnapshotBaseline(context, root);
+      await runAdr(context, root, [
+        'scan',
+        '--source',
+        'snapshot',
+        '--format',
+        'json',
+        '--out',
+        SESSION_PATH,
+        '--baseline',
+        BASELINE_PATH
+      ]);
+      const session = await readSession(root);
+      currentSession = session;
+      lastSilentError = undefined;
+      applyDecorationsToVisibleEditors();
+      codeLensProvider.refresh();
+      return session;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (options.silent) {
+        if (message !== lastSilentError) {
+          console.warn(`agent-diff-review auto review failed: ${message}`);
+          lastSilentError = message;
+        }
+        return undefined;
+      }
+      vscode.window.showErrorMessage(`agent-diff-review failed: ${message}`);
+      return undefined;
+    } finally {
+      autoReviewInFlight = undefined;
+      if (autoReviewQueued) {
+        autoReviewQueued = false;
+        scheduleAutoReview(context, 250);
+      }
+    }
+  })();
+
+  return autoReviewInFlight;
+}
+
+async function ensureSnapshotBaseline(context: vscode.ExtensionContext, root: string) {
+  if (existsSync(path.join(root, BASELINE_PATH))) {
+    return;
+  }
+  await runAdr(context, root, ['snapshot', 'init', '--baseline', BASELINE_PATH]);
+}
+
+async function refreshSnapshotBaseline(context: vscode.ExtensionContext) {
+  const root = workspaceRoot();
+  if (!root) {
+    return;
+  }
+  await runAdr(context, root, ['snapshot', 'init', '--baseline', BASELINE_PATH, '--force']);
+  await refreshReviewSession(context, { silent: true });
 }
 
 async function acceptBlock(args: BlockCommandArgs) {
@@ -227,7 +388,8 @@ async function acceptBlock(args: BlockCommandArgs) {
   if (!file || !block) {
     return;
   }
-  acceptedBlocks.add(blockKey(file.fileId, block.blockId));
+  await saveFileIfOpen(file);
+  markBlockAccepted(file, block);
   applyDecorationsToVisibleEditors();
   codeLensProvider.refresh();
 }
@@ -242,25 +404,28 @@ async function rejectBlock(args: BlockCommandArgs) {
   const editor = await openFile(file);
   const success = await replaceBlockWithOldSide(editor, block);
   if (success) {
-    acceptedBlocks.add(blockKey(file.fileId, block.blockId));
+    await editor.document.save();
+    markBlockAccepted(file, block);
     applyDecorationsToVisibleEditors();
     codeLensProvider.refresh();
   }
 }
 
-async function acceptFile(args: FileCommandArgs) {
+async function acceptFile(context: vscode.ExtensionContext, args: FileCommandArgs) {
   const file = fileById(args.fileId);
   if (!file) {
     return;
   }
+  await saveFileIfOpen(file);
   for (const block of fileBlocks(file)) {
-    acceptedBlocks.add(blockKey(file.fileId, block.blockId));
+    markBlockAccepted(file, block);
   }
+  await refreshSnapshotBaseline(context);
   applyDecorationsToVisibleEditors();
   codeLensProvider.refresh();
 }
 
-async function rejectFile(args: FileCommandArgs) {
+async function rejectFile(context: vscode.ExtensionContext, args: FileCommandArgs) {
   const file = fileById(args.fileId);
   if (!file) {
     return;
@@ -270,8 +435,10 @@ async function rejectFile(args: FileCommandArgs) {
   const blocks = fileBlocks(file).sort((a, b) => b.anchorLine - a.anchorLine);
   for (const block of blocks) {
     await replaceBlockWithOldSide(editor, block);
-    acceptedBlocks.add(blockKey(file.fileId, block.blockId));
+    markBlockAccepted(file, block);
   }
+  await editor.document.save();
+  await refreshSnapshotBaseline(context);
   applyDecorationsToVisibleEditors();
   codeLensProvider.refresh();
 }
@@ -334,7 +501,7 @@ function applyDecorations(document: vscode.TextDocument) {
   const deleted: vscode.DecorationOptions[] = [];
 
   for (const block of fileBlocks(file)) {
-    if (acceptedBlocks.has(blockKey(file.fileId, block.blockId))) {
+    if (isBlockAccepted(file, block)) {
       continue;
     }
 
@@ -408,12 +575,27 @@ async function openFile(file: ChangedFile) {
   return vscode.window.showTextDocument(document, { preview: false });
 }
 
+async function saveFileIfOpen(file: ChangedFile) {
+  const root = workspaceRoot();
+  if (!root) {
+    return;
+  }
+  const uri = vscode.Uri.file(path.join(root, file.path));
+  const document = vscode.workspace.textDocuments.find((item) => item.uri.toString() === uri.toString());
+  if (document?.isDirty) {
+    await document.save();
+  }
+}
+
 function fileForDocument(document: vscode.TextDocument) {
   const root = workspaceRoot();
   if (!root || !currentSession || document.uri.scheme !== 'file') {
     return undefined;
   }
-  const relative = path.relative(root, document.uri.fsPath).replaceAll(path.sep, '/');
+  const relative = workspaceRelativePath(root, document.uri.fsPath);
+  if (!relative) {
+    return undefined;
+  }
   return currentSession.files.find((file) => file.path === relative);
 }
 
@@ -474,8 +656,20 @@ function deletedCount(rows: DiffRow[]) {
   return rows.filter((row) => row.kind === 'deleted').length;
 }
 
+function markBlockAccepted(file: ChangedFile, block: ReviewBlock) {
+  acceptedBlocks.set(blockKey(file.fileId, block.blockId), blockSignature(block));
+}
+
+function isBlockAccepted(file: ChangedFile, block: ReviewBlock) {
+  return acceptedBlocks.get(blockKey(file.fileId, block.blockId)) === blockSignature(block);
+}
+
 function blockKey(fileId: string, blockId: string) {
   return `${fileId}:${blockId}`;
+}
+
+function blockSignature(block: ReviewBlock) {
+  return block.rows.map((row) => `${row.kind}:${row.oldLine ?? ''}:${row.newLine ?? ''}:${row.content}`).join('\n');
 }
 
 function clampLine(document: vscode.TextDocument, line: number) {
@@ -487,6 +681,40 @@ function clampLine(document: vscode.TextDocument, line: number) {
 
 function workspaceRoot() {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
+function workspaceRelativePath(root: string, fsPath: string) {
+  const relative = path.relative(root, fsPath);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    return undefined;
+  }
+  return relative.replaceAll(path.sep, '/');
+}
+
+function isWorkspaceDocument(document: vscode.TextDocument) {
+  return isWorkspaceFileUri(document.uri);
+}
+
+function isWorkspaceFileUri(uri: vscode.Uri) {
+  const root = workspaceRoot();
+  if (!root || uri.scheme !== 'file') {
+    return false;
+  }
+
+  const relative = workspaceRelativePath(root, uri.fsPath);
+  return Boolean(relative && !relative.startsWith('.git/') && !relative.startsWith('.agent-diff-review/'));
+}
+
+function hasVisibleWorkspaceDocument() {
+  return vscode.window.visibleTextEditors.some((editor) => isWorkspaceDocument(editor.document));
+}
+
+function autoReviewEnabled() {
+  return vscode.workspace.getConfiguration('agentDiffReview').get<boolean>('autoReview', true);
+}
+
+function autoReviewDelayMs() {
+  return vscode.workspace.getConfiguration('agentDiffReview').get<number>('autoReviewDelayMs', DEFAULT_AUTO_REVIEW_DELAY_MS);
 }
 
 function adrPath(context: vscode.ExtensionContext) {

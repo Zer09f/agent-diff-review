@@ -2,6 +2,7 @@ export type LineDecision = 'accept' | 'reject' | 'pending';
 export type RowKind = 'context' | 'added' | 'deleted';
 export type ChangeType = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'untracked';
 export type RiskLevel = 'low' | 'medium' | 'high';
+export type ReviewSource = 'git' | 'snapshot';
 
 export interface ReviewSession {
   schemaVersion: string;
@@ -10,6 +11,10 @@ export interface ReviewSession {
   headRef: string;
   createdAt: string;
   worktreeHash: string;
+  source?: ReviewSource | null;
+  baselineId?: string | null;
+  baselineHash?: string | null;
+  trackedPaths?: string[];
   files: ChangedFile[];
   dependencyEdges: DependencyEdge[];
   riskMarkers: RiskMarker[];
@@ -87,4 +92,3 @@ export interface DecisionSet {
   sessionWorktreeHash: string;
   decisions: LineDecisionEntry[];
 }
-

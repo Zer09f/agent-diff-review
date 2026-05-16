@@ -6,7 +6,7 @@ DECISION_PATH="${2:-.agent-diff-review/decisions.json}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
 if [ "${3:-}" = "--dry-run" ]; then
-  node "$SCRIPT_DIR/adr-wrapper.mjs" apply --session "$SESSION_PATH" --decisions "$DECISION_PATH" --dry-run
+  node "$SCRIPT_DIR/adr-wrapper.mjs" apply --source snapshot --session "$SESSION_PATH" --decisions "$DECISION_PATH" --dry-run
 else
-  node "$SCRIPT_DIR/adr-wrapper.mjs" apply --session "$SESSION_PATH" --decisions "$DECISION_PATH"
+  node "$SCRIPT_DIR/adr-wrapper.mjs" apply --source snapshot --session "$SESSION_PATH" --decisions "$DECISION_PATH"
 fi

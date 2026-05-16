@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$argsList = @("apply", "--session", $SessionPath, "--decisions", $DecisionPath)
+$argsList = @("apply", "--source", "snapshot", "--session", $SessionPath, "--decisions", $DecisionPath)
 if ($DryRun) {
   $argsList += "--dry-run"
 }

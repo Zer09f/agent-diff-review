@@ -1,5 +1,8 @@
 use agent_diff_core::{DecisionSet, ReviewSession};
-use agent_diff_git_patch::{apply_decisions, scan_worktree, ApplyOptions, ScanOptions};
+use agent_diff_git_patch::{
+    apply_decisions, apply_snapshot_decisions, init_snapshot, scan_snapshot, scan_worktree,
+    ApplyOptions, ScanOptions, SnapshotOptions, DEFAULT_BASELINE_PATH,
+};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::fs;
@@ -16,6 +19,10 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    Snapshot {
+        #[command(subcommand)]
+        command: SnapshotCommands,
+    },
     Scan {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         format: OutputFormat,
@@ -25,6 +32,10 @@ enum Commands {
         base: String,
         #[arg(long, default_value = ".")]
         workspace: PathBuf,
+        #[arg(long, value_enum, default_value_t = DiffSource::Git)]
+        source: DiffSource,
+        #[arg(long, default_value = DEFAULT_BASELINE_PATH)]
+        baseline: PathBuf,
     },
     Report {
         #[arg(long, default_value = ".agent-diff-review/session.json")]
@@ -41,6 +52,22 @@ enum Commands {
         dry_run: bool,
         #[arg(long, default_value = ".")]
         workspace: PathBuf,
+        #[arg(long, value_enum, default_value_t = DiffSource::Git)]
+        source: DiffSource,
+        #[arg(long, default_value = DEFAULT_BASELINE_PATH)]
+        baseline: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SnapshotCommands {
+    Init {
+        #[arg(long, default_value = ".")]
+        workspace: PathBuf,
+        #[arg(long, default_value = DEFAULT_BASELINE_PATH)]
+        baseline: PathBuf,
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -49,19 +76,52 @@ enum OutputFormat {
     Json,
 }
 
+#[derive(Clone, Debug, ValueEnum)]
+enum DiffSource {
+    Git,
+    Snapshot,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
+        Commands::Snapshot { command } => match command {
+            SnapshotCommands::Init {
+                workspace,
+                baseline,
+                force,
+            } => {
+                let snapshot = init_snapshot(&SnapshotOptions {
+                    workspace,
+                    baseline,
+                    force,
+                })?;
+                println!(
+                    "Wrote snapshot baseline: {} files, hash {}",
+                    snapshot.files.len(),
+                    snapshot.baseline_hash
+                );
+            }
+        },
         Commands::Scan {
             format: OutputFormat::Json,
             out,
             base,
             workspace,
+            source,
+            baseline,
         } => {
-            let session = scan_worktree(&ScanOptions {
-                workspace,
-                base_ref: base,
-            })?;
+            let session = match source {
+                DiffSource::Git => scan_worktree(&ScanOptions {
+                    workspace,
+                    base_ref: base,
+                })?,
+                DiffSource::Snapshot => scan_snapshot(&SnapshotOptions {
+                    workspace,
+                    baseline,
+                    force: false,
+                })?,
+            };
             write_json(&out, &session)?;
             println!("Wrote review session to {}", out.display());
             println!(
@@ -81,17 +141,34 @@ fn main() -> Result<()> {
             decisions,
             dry_run,
             workspace,
+            source,
+            baseline,
         } => {
             let session: ReviewSession = read_json(&session)?;
             let decisions: DecisionSet = read_json(&decisions)?;
-            let summary = apply_decisions(
-                &session,
-                &decisions,
-                &ApplyOptions {
-                    workspace,
-                    dry_run,
-                },
-            )?;
+            let summary = match source {
+                DiffSource::Git => apply_decisions(
+                    &session,
+                    &decisions,
+                    &ApplyOptions {
+                        workspace,
+                        dry_run,
+                    },
+                )?,
+                DiffSource::Snapshot => apply_snapshot_decisions(
+                    &session,
+                    &decisions,
+                    &ApplyOptions {
+                        workspace: workspace.clone(),
+                        dry_run,
+                    },
+                    &SnapshotOptions {
+                        workspace,
+                        baseline,
+                        force: false,
+                    },
+                )?,
+            };
             println!(
                 "{} files checked, {} files changed, {} rejected rows{}",
                 summary.files_checked,
@@ -413,6 +490,10 @@ mod tests {
             head_ref: "main".to_string(),
             created_at: "2026-05-14T00:00:00Z".to_string(),
             worktree_hash: "hash".to_string(),
+            source: None,
+            baseline_id: None,
+            baseline_hash: None,
+            tracked_paths: Vec::new(),
             files: Vec::new(),
             dependency_edges: Vec::new(),
             risk_markers: Vec::new(),

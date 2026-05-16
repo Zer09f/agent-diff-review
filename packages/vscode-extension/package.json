@@ -11,6 +11,7 @@
   },
   "categories": ["Other"],
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:agentDiffReview.open",
     "onCommand:agentDiffReview.applyDecisions"
   ],
@@ -33,6 +34,17 @@
           "type": "string",
           "default": "",
           "description": "Optional path to a custom adr binary. Leave empty to use the bundled binary."
+        },
+        "agentDiffReview.autoReview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan the Git worktree and show inline accept/reject actions when changed files are opened."
+        },
+        "agentDiffReview.autoReviewDelayMs": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 250,
+          "description": "Debounce delay before automatically refreshing inline review decorations."
         }
       }
     }

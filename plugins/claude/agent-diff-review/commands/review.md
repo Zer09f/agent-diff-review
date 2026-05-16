@@ -6,7 +6,8 @@ allowed-tools: Bash(node *)
 Run the bundled agent-diff-review CLI from this plugin:
 
 ```bash
-node "$CLAUDE_PLUGIN_ROOT/scripts/adr-wrapper.mjs" scan --format json --out .agent-diff-review/session.json
+node "$CLAUDE_PLUGIN_ROOT/scripts/adr-wrapper.mjs" snapshot init
+node "$CLAUDE_PLUGIN_ROOT/scripts/adr-wrapper.mjs" scan --source snapshot --format json --out .agent-diff-review/session.json
 node "$CLAUDE_PLUGIN_ROOT/scripts/adr-wrapper.mjs" report --session .agent-diff-review/session.json --out .agent-diff-review/report.html
 ```
 
