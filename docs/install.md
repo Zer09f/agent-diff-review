@@ -13,9 +13,9 @@
 从 GitHub Release 下载对应平台的压缩包：
 
 ```text
-adr-v0.1.1-win32-x64.zip
-adr-v0.1.1-linux-x64.tar.gz
-adr-v0.1.1-darwin-arm64.tar.gz
+adr-v1.1.1-win32-x64.zip
+adr-v1.1.1-linux-x64.tar.gz
+adr-v1.1.1-darwin-arm64.tar.gz
 ```
 
 解压后，把包含 `adr` 或 `adr.exe` 的目录加入 `PATH`。
@@ -31,7 +31,7 @@ adr --version
 安装对应平台的 VSIX：
 
 ```bash
-code --install-extension agent-diff-review-vscode-win32-x64-0.1.1.vsix
+code --install-extension agent-diff-review-vscode-win32-x64-1.1.1.vsix
 ```
 
 然后在命令面板运行：
@@ -74,7 +74,7 @@ Agent Diff Review: Apply Decisions
 从 release 下载对应平台的 Codex 插件包：
 
 ```text
-agent-diff-review-codex-v0.1.1-win32-x64.zip
+agent-diff-review-codex-v1.1.1-win32-x64.zip
 ```
 
 插件包包含：
