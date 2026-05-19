@@ -6,7 +6,9 @@ use agent_diff_git_patch::{
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
+use tempfile::NamedTempFile;
 
 #[derive(Debug, Parser)]
 #[command(name = "adr")]
@@ -191,14 +193,27 @@ fn write_json<T: serde::Serialize>(path: &PathBuf, value: &T) -> Result<()> {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
     let json = serde_json::to_string_pretty(value)?;
-    fs::write(path, json).with_context(|| format!("write {}", path.display()))
+    write_text_atomically(path, &json).with_context(|| format!("write {}", path.display()))
 }
 
 fn write_text(path: &PathBuf, content: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
-    fs::write(path, content).with_context(|| format!("write {}", path.display()))
+    write_text_atomically(path, content).with_context(|| format!("write {}", path.display()))
+}
+
+fn write_text_atomically(path: &PathBuf, content: &str) -> Result<()> {
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let mut temp = NamedTempFile::new_in(parent).with_context(|| format!("create temporary {}", path.display()))?;
+    temp.write_all(content.as_bytes())
+        .with_context(|| format!("write temporary {}", path.display()))?;
+    temp.flush()
+        .with_context(|| format!("flush temporary {}", path.display()))?;
+    temp.persist(path)
+        .map_err(|error| error.error)
+        .with_context(|| format!("replace {}", path.display()))?;
+    Ok(())
 }
 
 fn render_report(session: &ReviewSession) -> String {
