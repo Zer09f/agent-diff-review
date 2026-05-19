@@ -20,6 +20,15 @@ copyIfExists(join(extDir, "..", "..", "LICENSE"), join(staging, "LICENSE"));
 if (existsSync(join(extDir, "bin"))) {
   cpSync(join(extDir, "bin"), join(staging, "bin"), { recursive: true });
 }
+if (target) {
+  const executable = target.startsWith("win32") ? "adr.exe" : "adr";
+  const bundledAdr = join(staging, "bin", target, executable);
+  if (!existsSync(bundledAdr)) {
+    throw new Error(
+      `Missing bundled ${executable} for ${target}. Run scripts/sync-binaries.mjs --platform ${target} before packaging.`
+    );
+  }
+}
 
 const packageArgs = ["vsce", "package"];
 if (target) {

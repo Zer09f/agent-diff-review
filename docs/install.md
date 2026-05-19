@@ -28,16 +28,23 @@ adr --version
 
 ## VS Code
 
-安装对应平台的 VSIX：
+安装对应平台的 VSIX。VSIX 已内置对应平台的 `adr`，普通用户不需要提前安装 `adr`，VS Code 扩展的原生 review 流程也不要求系统安装 Git。
 
 ```bash
-code --install-extension agent-diff-review-vscode-win32-x64-1.1.1.vsix
+code --install-extension agent-diff-review-vscode-win32-x64-1.2.2.vsix
+```
+
+Windows 用户请按 VS Code 架构选择：
+
+```text
+agent-diff-review-vscode-win32-x64-1.2.2.vsix
+agent-diff-review-vscode-win32-arm64-1.2.2.vsix
 ```
 
 然后在命令面板运行：
 
 ```text
-Agent Diff Review: Open Review
+Agent Diff Review: Open Native Review
 Agent Diff Review: Apply Decisions
 ```
 
