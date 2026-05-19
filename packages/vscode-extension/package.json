@@ -1,7 +1,7 @@
 {
   "name": "agent-diff-review-vscode",
   "displayName": "agent-diff-review",
-  "version": "0.1.1",
+  "version": "1.2.2",
   "private": true,
   "description": "Visual review and line-level accept/reject for AI-generated code changes.",
   "license": "MIT",
@@ -42,7 +42,7 @@
         },
         "agentDiffReview.autoReviewDelayMs": {
           "type": "number",
-          "default": 1000,
+          "default": 350,
           "minimum": 250,
           "description": "Debounce delay before automatically refreshing inline review decorations."
         }

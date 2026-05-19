@@ -342,7 +342,21 @@ fn write_snapshot(path: &Path, snapshot: &BaselineSnapshot) -> Result<()> {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
     let json = serde_json::to_string_pretty(snapshot)?;
-    fs::write(path, json).with_context(|| format!("write snapshot baseline {}", path.display()))
+    write_text_atomically(path, &json).with_context(|| format!("write snapshot baseline {}", path.display()))
+}
+
+fn write_text_atomically(path: &Path, content: &str) -> Result<()> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut temp = NamedTempFile::new_in(parent)
+        .with_context(|| format!("create temporary {}", path.display()))?;
+    temp.write_all(content.as_bytes())
+        .with_context(|| format!("write temporary {}", path.display()))?;
+    temp.flush()
+        .with_context(|| format!("flush temporary {}", path.display()))?;
+    temp.persist(path)
+        .map_err(|error| error.error)
+        .with_context(|| format!("replace {}", path.display()))?;
+    Ok(())
 }
 
 fn refresh_snapshot_files(root: &Path, snapshot: &mut BaselineSnapshot) -> Result<()> {

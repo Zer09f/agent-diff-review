@@ -1,13 +1,15 @@
 # agent-diff-review VS Code 扩展
 
-面向 AI 代码变更的原生 review 扩展，直接在 VS Code 源文件编辑器中标记 Git 工作区修改。
+面向 AI 代码变更的原生 review 扩展，直接在 VS Code 源文件编辑器中标记工作区修改。
+
+从 GitHub Releases 下载对应平台的 VSIX 后即可安装使用。VSIX 已内置对应平台的 `adr`，普通用户不需要额外安装 `adr`；原生 review 流程也不要求系统安装 Git。Windows 用户需要按 VS Code 架构选择 `win32-x64` 或 `win32-arm64` 包。
 
 ## 命令
 
 - `Agent Diff Review: Open Native Review`
 - `Agent Diff Review: Apply Decisions`
 
-运行 `Open Native Review` 后，扩展会扫描当前 Git 工作区并打开变更文件：
+运行 `Open Native Review` 后，扩展会扫描当前工作区并打开变更文件：
 
 - 绿色表示新增内容。
 - 黄色表示替换后的当前内容。

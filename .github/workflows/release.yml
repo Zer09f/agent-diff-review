@@ -19,6 +19,8 @@ jobs:
         platform:
           - name: win32-x64
             os: windows-latest
+          - name: win32-arm64
+            os: windows-latest
           - name: linux-x64
             os: ubuntu-latest
           - name: darwin-x64
@@ -28,6 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - if: matrix.platform.name == 'win32-arm64'
+        run: rustup target add aarch64-pc-windows-msvc
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -49,6 +53,7 @@ jobs:
       matrix:
         target:
           - win32-x64
+          - win32-arm64
           - linux-x64
           - darwin-x64
           - darwin-arm64

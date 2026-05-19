@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Download, FileCode2, ShieldAlert, TestTube2 } from 'lucide-react';
 import type { ChangedFile, DecisionSet, LineDecision, LineDecisionEntry, ReviewSession } from './types';
+import stylesText from './styles.css?raw';
 import './styles.css';
 
 export type { ReviewSession, DecisionSet } from './types';
@@ -162,4 +163,28 @@ function Metric({ value, label }: { value: number; label: string }) {
 
 function decisionKey(fileId: string, hunkId: string, rowId: string) {
   return `${fileId}:${hunkId}:${rowId}`;
+}
+
+const REVIEW_STYLE_ID = 'agent-diff-review-ui-styles';
+let stylesInjected = false;
+
+function ensureStyles() {
+  if (stylesInjected || typeof document === 'undefined') {
+    return;
+  }
+
+  if (document.getElementById(REVIEW_STYLE_ID)) {
+    stylesInjected = true;
+    return;
+  }
+
+  const style = document.createElement('style');
+  style.id = REVIEW_STYLE_ID;
+  style.textContent = stylesText;
+  (document.head ?? document.documentElement).appendChild(style);
+  stylesInjected = true;
+}
+
+if (typeof document !== 'undefined') {
+  ensureStyles();
 }
