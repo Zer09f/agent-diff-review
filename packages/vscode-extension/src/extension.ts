@@ -11,6 +11,7 @@ const BASELINE_PATH = '.agent-diff-review/baseline.json';
 const DEFAULT_AUTO_REVIEW_DELAY_MS = 350;
 const DEFAULT_LOCAL_REVIEW_DELAY_MS = 60;
 const MAX_LOCAL_DIFF_CELLS = 1_000_000;
+const OUTPUT_CHANNEL_NAME = 'agent-diff-review';
 
 type RowKind = 'context' | 'added' | 'deleted';
 type ChangeType = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'untracked';
@@ -114,6 +115,7 @@ let autoReviewInFlight: Promise<ReviewSession | undefined> | undefined;
 let autoReviewQueued = false;
 let lastSilentError: string | undefined;
 let metadataWriteQueue = Promise.resolve();
+let outputChannel: vscode.OutputChannel | undefined;
 let baselineCache:
   | {
       root: string;
@@ -210,9 +212,11 @@ class ReviewCodeLensProvider implements vscode.CodeLensProvider {
 let codeLensProvider: ReviewCodeLensProvider;
 
 export function activate(context: vscode.ExtensionContext) {
+  outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
   codeLensProvider = new ReviewCodeLensProvider();
   const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
   context.subscriptions.push(
+    outputChannel,
     addedDecoration,
     changedDecoration,
     deletedDecoration,
@@ -259,6 +263,8 @@ export function activate(context: vscode.ExtensionContext) {
     fileWatcher.onDidDelete((uri) => scheduleAutoReviewForUri(context, uri)),
     vscode.commands.registerCommand('agentDiffReview.open', () => openNativeReview(context)),
     vscode.commands.registerCommand('agentDiffReview.applyDecisions', () => applyDecisions(context)),
+    vscode.commands.registerCommand('agentDiffReview.refreshSnapshotBaseline', () => refreshSnapshotBaseline(context)),
+    vscode.commands.registerCommand('agentDiffReview.showOutput', () => showOutput()),
     vscode.commands.registerCommand('agentDiffReview.acceptBlock', (args: BlockCommandArgs) => acceptBlock(args)),
     vscode.commands.registerCommand('agentDiffReview.rejectBlock', (args: BlockCommandArgs) => rejectBlock(args)),
     vscode.commands.registerCommand('agentDiffReview.acceptFile', (args: FileCommandArgs) => acceptFile(context, args)),
@@ -437,7 +443,7 @@ async function refreshReviewSession(context: vscode.ExtensionContext, options: {
         }
         return undefined;
       }
-      vscode.window.showErrorMessage(`agent-diff-review failed: ${message}`);
+      showFailureMessage(`agent-diff-review failed: ${message}`);
       return undefined;
     } finally {
       autoReviewInFlight = undefined;
@@ -462,11 +468,21 @@ async function ensureSnapshotBaseline(context: vscode.ExtensionContext, root: st
 async function refreshSnapshotBaseline(context: vscode.ExtensionContext) {
   const root = workspaceRoot();
   if (!root) {
+    vscode.window.showErrorMessage('Open a workspace folder before rebuilding the agent-diff-review baseline.');
+    return;
+  }
+  const confirmed = await vscode.window.showWarningMessage(
+    'Rebuild the agent-diff-review snapshot baseline from the current workspace state? Current edits will become the new review baseline.',
+    { modal: true },
+    'Rebuild Baseline'
+  );
+  if (confirmed !== 'Rebuild Baseline') {
     return;
   }
   await initializeSnapshotBaseline(context, root, true);
   baselineCache = undefined;
   await refreshReviewSession(context, { silent: true });
+  vscode.window.showInformationMessage('agent-diff-review snapshot baseline rebuilt.');
 }
 
 async function initializeSnapshotBaseline(context: vscode.ExtensionContext, root: string, force: boolean) {
@@ -1463,6 +1479,7 @@ function runAdr(context: vscode.ExtensionContext, cwd: string, args: string[]) {
   return new Promise<void>((resolve, reject) => {
     const adr = resolveAdrCommand(context);
     const command = adr.command;
+    logAdrInvocation(adr, cwd, args);
     const child = spawn(command, args, { cwd, shell: process.platform === 'win32' && !path.isAbsolute(command) });
     let stdout = '';
     let stderr = '';
@@ -1472,18 +1489,61 @@ function runAdr(context: vscode.ExtensionContext, cwd: string, args: string[]) {
     child.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
     });
-    child.on('error', (error) => reject(new Error(adrFailureMessage(adr, error.message))));
+    child.on('error', (error) => {
+      logAdrFailure(error.message);
+      reject(new Error(adrFailureMessage(adr, error.message)));
+    });
     child.on('close', (code) => {
       if (code === 0) {
         if (stdout.trim()) {
-          console.log(stdout.trim());
+          logAdrOutput('stdout', stdout);
         }
         resolve();
       } else {
+        logAdrOutput('stdout', stdout);
+        logAdrOutput('stderr', stderr);
         reject(new Error(adrFailureMessage(adr, stderr.trim() || stdout.trim() || `adr exited with ${code}`)));
       }
     });
   });
+}
+
+function logAdrInvocation(adr: AdrCommand, cwd: string, args: string[]) {
+  const source = adr.bundled ? 'bundled' : adr.userConfigured ? 'configured' : 'PATH';
+  output().appendLine(`[adr] ${source} ${adr.platform}: ${adr.command}`);
+  output().appendLine(`[adr] cwd: ${cwd}`);
+  output().appendLine(`[adr] args: ${args.map(formatCommandArg).join(' ')}`);
+}
+
+function logAdrOutput(stream: 'stdout' | 'stderr', content: string) {
+  const trimmed = content.trim();
+  if (trimmed) {
+    output().appendLine(`[adr:${stream}] ${trimmed}`);
+  }
+}
+
+function logAdrFailure(message: string) {
+  output().appendLine(`[adr:error] ${message}`);
+}
+
+function formatCommandArg(value: string) {
+  return /\s/.test(value) ? JSON.stringify(value) : value;
+}
+
+function output() {
+  outputChannel ??= vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
+  return outputChannel;
+}
+
+function showOutput() {
+  output().show(true);
+}
+
+async function showFailureMessage(message: string) {
+  const action = await vscode.window.showErrorMessage(message, 'Show Logs');
+  if (action === 'Show Logs') {
+    showOutput();
+  }
 }
 
 function adrFailureMessage(adr: AdrCommand, message: string) {

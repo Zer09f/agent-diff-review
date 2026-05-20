@@ -13,9 +13,9 @@
 从 GitHub Release 下载对应平台的压缩包：
 
 ```text
-adr-v1.1.1-win32-x64.zip
-adr-v1.1.1-linux-x64.tar.gz
-adr-v1.1.1-darwin-arm64.tar.gz
+adr-v1.2.3-win32-x64.zip
+adr-v1.2.3-linux-x64.tar.gz
+adr-v1.2.3-darwin-arm64.tar.gz
 ```
 
 解压后，把包含 `adr` 或 `adr.exe` 的目录加入 `PATH`。
@@ -31,14 +31,14 @@ adr --version
 安装对应平台的 VSIX。VSIX 已内置对应平台的 `adr`，普通用户不需要提前安装 `adr`，VS Code 扩展的原生 review 流程也不要求系统安装 Git。
 
 ```bash
-code --install-extension agent-diff-review-vscode-win32-x64-1.2.2.vsix
+code --install-extension agent-diff-review-vscode-win32-x64-1.2.3.vsix
 ```
 
 Windows 用户请按 VS Code 架构选择：
 
 ```text
-agent-diff-review-vscode-win32-x64-1.2.2.vsix
-agent-diff-review-vscode-win32-arm64-1.2.2.vsix
+agent-diff-review-vscode-win32-x64-1.2.3.vsix
+agent-diff-review-vscode-win32-arm64-1.2.3.vsix
 ```
 
 然后在命令面板运行：
@@ -81,7 +81,7 @@ Agent Diff Review: Apply Decisions
 从 release 下载对应平台的 Codex 插件包：
 
 ```text
-agent-diff-review-codex-v1.1.1-win32-x64.zip
+agent-diff-review-codex-v1.2.3-win32-x64.zip
 ```
 
 插件包包含：

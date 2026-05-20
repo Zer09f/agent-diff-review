@@ -1,6 +1,6 @@
 {
   "name": "agent-diff-review",
-  "version": "1.1.1",
+  "version": "1.2.3",
   "description": "Review AI-generated Git worktree changes with a visual diff report and line-level accept/reject decisions.",
   "author": {
     "name": "agent-diff-review contributors",

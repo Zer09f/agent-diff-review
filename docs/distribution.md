@@ -96,6 +96,6 @@ workflow 通过 `v*.*.*` tag 或手动 `workflow_dispatch` 触发。
 11. 打 tag 发布：
 
 ```bash
-git tag v1.1.1
-git push origin v1.1.1
+git tag v1.2.3
+git push origin v1.2.3
 ```
